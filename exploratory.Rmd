@@ -1,0 +1,86 @@
+---
+title: "Exploratory Analysis"
+author: "Angel Garcia de la Garza"
+date: "5/10/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(kernlab)
+library(dplyr)
+
+```
+
+```{r}
+
+bc.data <- read.csv("./data.csv") %>%
+              dplyr::select(id:fractal_dimension_worst)
+
+```
+
+```{r}
+
+cols <- character(nrow(bc.data))
+cols[] <- "black"
+
+cols[bc.data$diagnosis == "B"] <- "blue"
+cols[bc.data$diagnosis == "M"] <- "red"
+pairs(bc.data[,c(3,5,6,8,9,10)], col = scales::alpha(cols, 0.2), pch=16, cex.labels=1)
+```
+
+```{r}
+
+t.score <- rep(NA, 30)
+
+for (i in 1:30) {
+  
+  t.score[i] <- t.test(bc.data[,i + 1] ~ bc.data$diagnosis)$statistic
+  
+} 
+
+t.score <- as.data.frame(cbind(t.score, names(bc.data[2:31]))) %>%
+              mutate(T_statistic = as.numeric(as.character(t.score)),
+                     Predictor = V2)
+            
+ggplot(data=t.score, aes(x=Predictor, y=T_statistic)) +
+    geom_bar(stat="identity", position=position_dodge(), fill="dodgerblue2") + 
+  geom_hline(yintercept = -1.96, alpha = 0.4) + 
+  coord_flip() + theme_bw() 
+
+
+
+```
+
+```{r}
+
+plot(bc.rf)
+
+```
+
+```{r}
+
+load("output.RData")
+
+ct.logistic <- as.data.frame(cbind(as.character(bc.data$diagnosis), 
+                                   predict(final.glmnet, newx = x, type = "class")))
+
+names(ct.logistic) <- c("Observed", "Predicted")
+
+table(ct.logistic$Predicted, ct.logistic$Observed)
+
+logistic.roc <- pROC::roc(as.character(bc.data$diagnosis), predict(final.glmnet, 
+                                                                   newx = x, 
+                                                                   type = "response"))
+
+plot(logistic.roc)
+
+library(fmsb)
+
+Kappa.test(ct.logistic$Observed, ct.logistic$Predicted)
+
+miss.classification <- 7 / 569
+
+```
+

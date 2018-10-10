@@ -1,0 +1,94 @@
+---
+title: "Logistic LDA QDA"
+author: "Angel Garcia de la Garza"
+date: "5/9/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(caret)
+library(pROC)
+library(MASS)
+library(glmnet)
+
+bc.data <- read.csv("./data.csv") %>%
+              dplyr::select(id:fractal_dimension_worst)
+
+set.seed(1)
+```
+
+## GLMNET
+
+```{r}
+
+bc.data <- bc.data %>%
+            select(-id)
+
+x <- bc.data[,c(-1)] %>% scale() %>% data.matrix()# input matrix
+y <- bc.data$diagnosi
+
+output <- as.data.frame(matrix(NA, 21, 4))
+names(output) <- c("lambda", "alpha", "AUC", "AUC.SE")
+
+for (i in 1:21) {
+  
+  alpha.cv <- seq(0,1, 0.05)[i]
+  
+  cv.fit <- cv.glmnet(x, y, 
+                            family = "binomial",
+                            alpha = alpha.cv, 
+                            type.measure = "auc")
+  
+  output$lambda[i] <- cv.fit$lambda.min
+  output$alpha[i] <- alpha.cv
+  output$AUC[i] <- cv.fit$cvm[which(cv.fit$lambda == cv.fit$lambda.min)]
+  output$AUC.SE[i] <- cv.fit$cvsd[which(cv.fit$lambda == cv.fit$lambda.min)]
+  
+}
+
+output$AUC[which(output$AUC == min(output$AUC))]
+output$AUC.SE[which(output$AUC == min(output$AUC))]
+
+final.glmnet <- glmnet(x, y, 
+                       family = "binomial",
+                       alpha = output$alpha[which(output$AUC == min(output$AUC))],
+                       lambda = output$lambda[which(output$AUC == min(output$AUC))])
+
+```
+
+## LDA
+
+```{r}
+
+bc.lda <- train(diagnosis ~. , bc.data,
+                  method = "lda",
+                  metric = "ROC",
+                  trControl = trainControl(method = "cv", number =10,
+                                            summaryFunction = twoClassSummary, 
+                                            classProbs = TRUE))  
+
+bc.lda # ROC 0.9934522
+bc.lda$finalModel
+
+```
+
+## QDA
+
+```{r}
+
+bc.qda <- train(diagnosis ~. , bc.data,
+                  method = "qda",
+                  metric = "ROC",
+                  trControl = trainControl(method = "cv", number =10,
+                                            summaryFunction = twoClassSummary, 
+                                            classProbs = TRUE))  
+
+bc.qda # ROC 0.9879423
+bc.qda$finalModel
+
+```
+

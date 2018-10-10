@@ -1,0 +1,303 @@
+---
+title: "Final Project Report"
+author: "Angel Garcia de la Garza"
+date: "4/26/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+
+library(tidyverse)
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(caret)
+library(kernlab)
+library(randomForest)
+library(gbm)
+library(pROC)
+library(MASS)
+library(glmnet)
+library(ggplot2)
+
+bc.data <- read.csv("./data.csv") %>%
+              select(id:fractal_dimension_worst)
+
+set.seed(1)
+
+```
+
+## SVM
+
+```{r}
+attach(bc.data)
+bc.x <- bc.data[,3:32]
+# summary(bc.data)
+# mean and range vary highly across the varibles -> scale
+
+
+sigma.range <- sigest(as.matrix(bc.x))
+svmgrid <- expand.grid(sigma = sigma.range,
+                       C = c(0.01,1,10,100))
+bc.svm <- train(bc.x, diagnosis,
+                  method = "svmRadial",
+                  tuneGrid = svmgrid,
+                  preProc = c("center", "scale"),
+                  metric = "ROC",
+                  trControl = trainControl(method = "cv", number =10,
+                                            summaryFunction = twoClassSummary, 
+                                            classProbs = TRUE))  
+
+bc.svm # ROC 0.9958024
+bc.svm$bestTune
+bc.svm$finalModel
+
+plot(bc.svm, plotType = "level")
+```
+
+## KNN
+
+```{r}
+
+bc.knn <- train(bc.x, diagnosis,
+             method     = "knn",
+             tuneGrid   = expand.grid(k = 1:30),
+             preProc = c("center", "scale"),
+             trControl  = trainControl(method = "cv", number =10,
+                                            summaryFunction = twoClassSummary, 
+                                            classProbs = TRUE),
+             metric     = "ROC")
+
+bc.knn
+# k = 14
+# ROC 0.9925515
+```
+
+
+## RF + Bagging
+
+```{r}
+
+bc.data <- bc.data %>%
+            select(-id)
+
+rfgrid <- expand.grid(mtry = 1:30)
+
+bc.rf <- train(diagnosis ~. , bc.data, ntree = 2000,
+                  method = "rf",
+                  tuneGrid = rfgrid,
+                  metric = "ROC",
+                  trControl = trainControl(method = "cv", number =10,
+                                            summaryFunction = twoClassSummary, 
+                                            classProbs = TRUE))  
+
+bc.rf # ROC 0.9926185
+bc.rf$bestTune # mtry 1
+bc.rf$finalModel
+
+plot(bc.rf)
+
+varImpPlot(bc.rf$finalModel)
+
+```
+
+## GBM
+
+
+```{r}
+
+gbmgrid <- expand.grid(shrinkage = c(0.0001, 0.001, 0.01, 0.1, 0.2, 0.3, 0.4, 0.5),
+                       n.trees = 3000,
+                       interaction.depth = 1,
+                       n.minobsinnode = 10)
+
+bc.gbm <- train(diagnosis ~. , bc.data,
+                  method = "gbm",
+                  tuneGrid = gbmgrid,
+                  metric = "ROC",
+                  trControl = trainControl(method = "cv", number =10,
+                                            summaryFunction = twoClassSummary, 
+                                            classProbs = TRUE))  
+
+bc.gbm # ROC 0.9948785
+bc.gbm$bestTune # shrinkage = 0.1
+bc.gbm$finalModel
+
+plot(bc.gbm)
+
+summary(bc.gbm$finalModel)
+
+```
+
+
+## GLMNET
+
+```{r}
+
+bc.data <- bc.data %>%
+            select(-id)
+
+x <- bc.data[,c(-1)] %>% scale() %>% data.matrix()# input matrix
+y <- bc.data$diagnosi
+
+output <- as.data.frame(matrix(NA, 21, 4))
+names(output) <- c("lambda", "alpha", "AUC", "AUC.SE")
+
+for (i in 1:21) {
+  
+  alpha.cv <- seq(0,1, 0.05)[i]
+  
+  cv.fit <- cv.glmnet(x, y, 
+                            family = "binomial",
+                            alpha = alpha.cv, 
+                            type.measure = "auc")
+  
+  output$lambda[i] <- cv.fit$lambda.min
+  output$alpha[i] <- alpha.cv
+  output$AUC[i] <- cv.fit$cvm[which(cv.fit$lambda == cv.fit$lambda.min)]
+  output$AUC.SE[i] <- cv.fit$cvsd[which(cv.fit$lambda == cv.fit$lambda.min)]
+  
+}
+
+output$AUC[which(output$AUC == max(output$AUC))]
+output$AUC.SE[which(output$AUC == max(output$AUC))]
+
+final.glmnet <- glmnet(x, y, 
+                       family = "binomial",
+                       alpha = output$alpha[which(output$AUC == max(output$AUC))],
+                       lambda = output$lambda[which(output$AUC == max(output$AUC))])
+
+```
+
+## LDA
+
+```{r}
+
+bc.lda <- train(diagnosis ~. , bc.data,
+                  method = "lda",
+                  metric = "ROC",
+                  trControl = trainControl(method = "cv", number =10,
+                                            summaryFunction = twoClassSummary, 
+                                            classProbs = TRUE))  
+
+bc.lda # ROC 0.9934522
+bc.lda$finalModel
+
+```
+
+## QDA
+
+```{r}
+
+bc.qda <- train(diagnosis ~. , bc.data,
+                  method = "qda",
+                  metric = "ROC",
+                  trControl = trainControl(method = "cv", number =10,
+                                            summaryFunction = twoClassSummary, 
+                                            classProbs = TRUE))  
+
+bc.qda # ROC 0.9879423
+bc.qda$finalModel
+
+```
+
+
+```{r}
+
+#save.image("output.RData")
+load("output.RData")
+
+final.results <- as.data.frame(matrix(NA,7,3))
+names(final.results) <- c("Model", "AUC", "AUC.SE")
+
+
+final.results[1,] <- c("Elastic Net Logistic", 
+                       output$AUC[which(output$AUC == max(output$AUC))],
+                       output$AUC.SE[which(output$AUC == max(output$AUC))])
+
+final.results[2,] <- c("LDA", 
+                       bc.lda$results$ROC[which(bc.lda$results$ROC == 
+                                                  max(bc.lda$results$ROC))],
+                       bc.lda$results$ROCSD[which(bc.lda$results$ROC == 
+                                                  max(bc.lda$results$ROC))])
+
+final.results[3,] <- c("QDA", 
+                       bc.qda$results$ROC[which(bc.qda$results$ROC == 
+                                                  max(bc.qda$results$ROC))],
+                       bc.qda$results$ROCSD[which(bc.qda$results$ROC == 
+                                                  max(bc.qda$results$ROC))])
+final.results[4,] <- c("Random Forest", 
+                       bc.rf$results$ROC[which(bc.rf$results$ROC == 
+                                                  max(bc.rf$results$ROC))],
+                       bc.rf$results$ROCSD[which(bc.rf$results$ROC == 
+                                                  max(bc.rf$results$ROC))])
+
+final.results[5,] <- c("Boosting", 
+                       bc.gbm$results$ROC[which(bc.gbm$results$ROC == 
+                                                  max(bc.gbm$results$ROC))],
+                       bc.gbm$results$ROCSD[which(bc.gbm$results$ROC == 
+                                                  max(bc.gbm$results$ROC))])
+
+final.results[6,] <- c("SVM", 
+                       bc.svm$results$ROC[which(bc.svm$results$ROC == 
+                                                  max(bc.svm$results$ROC))],
+                       bc.svm$results$ROCSD[which(bc.svm$results$ROC == 
+                                                  max(bc.svm$results$ROC))])
+
+final.results[7,] <- c("KNN", 
+                       bc.knn$results$ROC[which(bc.knn$results$ROC == 
+                                                  max(bc.knn$results$ROC))],
+                       bc.knn$results$ROCSD[which(bc.knn$results$ROC == 
+                                                  max(bc.knn$results$ROC))])
+
+final.results <- final.results %>%
+                  mutate(AUC = as.numeric(AUC),
+                         AUC.SE = as.numeric(AUC.SE),
+                         Model = factor(Model, levels = Model))
+
+ggplot(final.results, aes(x=Model, y=AUC, fill=Model)) +
+    geom_bar(position=position_dodge(.9), 
+             colour="black", stat="identity") +
+    geom_errorbar(position=position_dodge(.9), width=.25, 
+                  aes(ymin= AUC-1.96*(AUC.SE), 
+                      ymax= ifelse(AUC + 1.96*(AUC.SE) > 1, 1, AUC + 1.96*(AUC.SE)))) +
+    coord_cartesian(ylim=c(0.95,1.00)) +
+    theme_bw() + ggtitle("Cross Validated AUC for each Model") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+    xlab("") +
+    geom_hline(aes(yintercept =  max(AUC)), linetype = "dashed")
+
+```
+
+
+```{r}
+
+final.glmnet$beta
+plot(final.glmnet)
+
+final.glmnet$beta
+
+test <- glm(diagnosis ~ . - symmetry_mean - concavity_se - compactness_worst, 
+            data = scale(bc.data),
+            family = "binomial")
+
+```
+
+
+```{r}
+
+featurePlot(x = scale(bc.data[, 2:10]), 
+            y = bc.data$diagnosis, 
+            plot = "density")
+
+
+```
+
+

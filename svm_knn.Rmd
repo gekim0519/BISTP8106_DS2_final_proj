@@ -1,0 +1,118 @@
+---
+title: "final_sara"
+author: "Gaeun Kim"
+date: "5/7/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(kernlab)
+library(dplyr)
+
+bc.data <- read.csv("./data.csv") %>%
+              dplyr::select(id:fractal_dimension_worst)
+```
+
+
+```{r}
+attach(bc.data)
+bc.x <- bc.data[,3:32]
+# summary(bc.data)
+# mean and range vary highly across the varibles -> scale
+
+set.seed(1)
+sigma.range <- sigest(as.matrix(bc.x))
+svmgrid <- expand.grid(sigma = sigma.range,
+                       C = c(0.01,1,10,100))
+bc.svm <- train(bc.x, diagnosis,
+                  method = "svmRadial",
+                  tuneGrid = svmgrid,
+                  preProc = c("center", "scale"),
+                  metric = "ROC",
+                  trControl = trainControl(method = "cv", number =10,
+                                            summaryFunction = twoClassSummary, 
+                                            classProbs = TRUE))  
+
+bc.svm # ROC 0.9958024
+bc.svm$bestTune
+bc.svm$finalModel
+
+plot(bc.svm, plotType = "level")
+```
+
+
+```{r}
+set.seed(1)
+bc.knn <- train(bc.x, diagnosis,
+             method     = "knn",
+             tuneGrid   = expand.grid(k = 1:30),
+             preProc = c("center", "scale"),
+             trControl  = trainControl(method = "cv", number =10,
+                                            summaryFunction = twoClassSummary, 
+                                            classProbs = TRUE),
+             metric     = "ROC")
+
+bc.knn
+# k = 14
+# ROC 0.9925515
+```
+
+Unsupervised analysis/Exploratory data analysis
+
+Overview of the dataset
+
+```{r}
+names(bc.data)
+dim(bc.data)
+
+anyNA(bc.data)
+
+bc.data %>%
+  group_by(diagnosis) %>%
+  count()
+```
+
+There are 569 observations and 32 variables in the dataset bc.data.All features are computed from a digitized image of a fine needle aspirate (FNA) of a breast mass. They describe characteristics of the cell nuclei present in the image.
+
+1) ID number 
+2) Diagnosis (M = malignant, B = benign) 
+3-32) Ten real-valued features are computed for each cell nucleus: 
+
+a) radius (mean of distances from center to points on the perimeter) 
+b) texture (standard deviation of gray-scale values) 
+c) perimeter 
+d) area 
+e) smoothness (local variation in radius lengths) 
+f) compactness (perimeter^2 / area - 1.0) 
+g) concavity (severity of concave portions of the contour) 
+h) concave points (number of concave portions of the contour) 
+i) symmetry 
+j) fractal dimension ("coastline approximation" - 1)
+
+
+source: https://archive.ics.uci.edu/ml/datasets/Breast+Cancer+Wisconsin+%28Diagnostic%29
+
+```{r}
+corr <- function(x) {
+  corr = Hmisc::rcorr(x, diagnosis)
+  corr$r[1,2]
+}
+
+corrxy = purrr::map(bc.x, corr) %>%
+          as_tibble() %>%
+            tidyr::gather(key = feature, value = corr, 1:30) %>%
+              arrange(desc(corr))
+ggplot(corrxy, aes(x = feature, y = corr)) + geom_bar(stat="identity")
+
+
+
+
+```
+
+
+•Is there any interesting structure present in the data? 
+•What were your findings? What insights into the data can you make?
+
+Here  you  can  use  any  techniques  as  long  as  they  are  adequately  explained.  If  you  don’t  find anything interesting, then describe what you tried, and show that there isn’t much visible structure. Data science is NOTmanipulating the data in some way until you get an answer. 
