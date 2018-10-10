@@ -1,0 +1,2 @@
+# BISTP8106_DS2_final_proj
+The Breast Cancer Wisconsin (Diagnosis) Dataset consists of features computed from a digitized image of a fine needle aspirate (FNA) of a breast mass. The features describe characteristics of the cell nuclei from the image. The dataset can be found here: https://archive.ics.uci.edu/ml/datasets/Breast+Cancer+Wisconsin+%28Diagnostic%29 . The goal of this project is to use the available data to build a classification model to accurately predict if the tumor will be diagnosed as benign or malignant. 
